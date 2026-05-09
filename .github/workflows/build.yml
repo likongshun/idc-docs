@@ -1,0 +1,229 @@
+name: 安卓打包
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 打包,提前gitea中提前设置以下变量
+          KS_STORE_PASSWORD - store密码
+          KS_KEY_PASSWORD - key密码
+          KS_KEY_ALIAS - 密钥别名建议设为 upload
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 读取仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: 安装 Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 NDK
+        run: sdkmanager "ndk;27.2.12479018"
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+ 
+      - name: 安装项目依赖
+        run: pnpm install --legacy-peer-deps
+
+      # - name: 构建静态站点
+      #   run: pnpm run docs:build
+
+      # 清华镜像：sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/
+      # 中科大镜像：sparse+https://mirrors.ustc.edu.cn/crates.io-index/
+      - name: 配置 Cargo 镜像
+        run: |
+          mkdir -p ~/.cargo
+          cat > ~/.cargo/config.toml <<'EOF'
+          [source.crates-io]
+          replace-with = 'tuna-sparse'
+
+          [source.tuna-sparse]
+          registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
+
+          [net]
+          http.timeout = 600
+          retry = 10
+          git-fetch-with-cli = true
+          EOF
+
+      - name: 清空并重建cargo缓存
+        run: |
+          rm -rf ~/.cargo/registry/index/*
+          rm -rf src-tauri/target
+
+      - name: tauri初始化基础
+        run: pnpm tauri init \
+          --ci \
+          --app-name "运维文档" \
+          --window-title "运维文档" \
+          --dist-dir "../src/.vuepress/dist/" \
+          --dev-path "http://localhost:8080" \
+          --before-dev-command "pnpm run docs:dev" \
+          --before-build-command "pnpm run docs:build" \
+          --identifier "top.liks.docs"
+        env:
+          RUSTUP_DIST_SERVER: "https://rsproxy.cn"
+          RUSTUP_UPDATE_ROOT: "https://rsproxy.cn/rustup"
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+      - name: tauri初始化安卓项目结构
+        run: pnpm tauri android init
+
+      - name: 注入自定义安卓文件
+        run: |
+          # 修改tauri项目配置文件
+          if grep -q '"identifier"' src-tauri/tauri.conf.json; then
+              # 如果存在 identifier,修改它
+              sed -i 's/"identifier": ".*"/"identifier": "top.liks.docs"/' src-tauri/tauri.conf.json
+          else
+              # 如果不存在，在 bundle 部分添加
+              sed -i '/"bundle": {/a\      "identifier": "top.liks.docs",' src-tauri/tauri.conf.json
+          fi
+
+
+          set -e
+          ANDROID_APP_DIR="src-tauri/gen/android/app"
+          
+          # 1.覆盖 themes.xml
+          # cp -f android-patches/themes.xml "$ANDROID_APP_DIR/src/main/res/values/themes.xml"
+          cat > "$ANDROID_APP_DIR/src/main/res/values/themes.xml" <<'EOF'
+          <resources xmlns:tools="http://schemas.android.com/tools">
+              <!-- Base application theme. -->
+              <style name="Theme.app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+                  <!-- Customize your theme here. -->
+                  <!-- 状态栏透明 -->
+                  <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
+                  <!-- 导航栏透明（可选） -->
+                  <item name="android:navigationBarColor" tools:targetApi="l">@android:color/transparent</item>
+                  <!-- 全屏不自动隐藏系统栏（由代码控制） -->
+                  <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
+              </style>
+          </resources>
+          EOF
+        
+          # 2. 覆盖 MainActivity.kt (路径基于你之前提供的包名 top.liks.docs)
+          mkdir -p "$ANDROID_APP_DIR/src/main/java/top/liks/docs"
+          # cp -f android-patches/MainActivity.kt "$ANDROID_APP_DIR/src/main/java/top/liks/docs/MainActivity.kt"
+
+          cat > "$ANDROID_APP_DIR/src/main/java/top/liks/docs/MainActivity.kt" <<'EOF'
+          package top.liks.docs
+
+          import android.os.Bundle
+          import android.view.View
+          import android.view.WindowManager
+          import com.tauri.android.TauriActivity
+
+          class MainActivity : TauriActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  window?.apply {
+                      setFlags(
+                          WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                          WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                      )
+                      decorView.systemUiVisibility = (
+                          View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                          View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                          View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                      )
+                  }
+                  super.onCreate(savedInstanceState)
+              }
+          }
+          EOF
+          
+          # 3. 覆盖 build.gradle.kts
+          # cp -f android-patches/build.gradle.kts "$ANDROID_APP_DIR/build.gradle.kts"
+          cat > "$ANDROID_APP_DIR/build.gradle.kts" <<'EOF'
+          import java.util.Properties
+          
+          android {
+              signingConfigs {
+                  create("release") {
+                      val keystorePropertiesFile = rootProject.file("keystore.properties")
+                      val keystoreProperties = Properties()
+                      if (keystorePropertiesFile.exists()) {
+                          keystoreProperties.load(keystorePropertiesFile.inputStream())
+                          storeFile = file(keystoreProperties.getProperty("storeFile"))
+                          storePassword = keystoreProperties.getProperty("storePassword")
+                          keyAlias = keystoreProperties.getProperty("keyAlias")
+                          keyPassword = keystoreProperties.getProperty("keyPassword")
+                      }
+                  }
+              }
+              
+              buildTypes {
+                  release {
+                      signingConfig = signingConfigs.findByName("release")
+                      isMinifyEnabled = false
+                      proguardFiles(
+                          getDefaultProguardFile("proguard-android-optimize.txt"),
+                          "proguard-rules.pro"
+                      )
+                  }
+              }
+          }
+          EOF
+
+      # 生成 PKCS12 格式的 keystore 文件，供 Android Gradle 插件使用
+      - name: 签名密钥文件生成及配置
+        run: |
+          set -e
+          ANDROID_ROOT="src-tauri/gen/android"
+          KS_DIR="$RUNNER_TEMP/keystore"
+
+          if [ ! -f "$KS_DIR/upload-keystore.p12" ]; then
+            keytool -genkey -v \
+              -keystore $KS_DIR/upload-keystore.p12 \
+              -storetype PKCS12 \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias upload \
+              -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
+              -keypass ${{ secrets.KEY_PASSWORD }} \
+              -dname "CN=CI Build, OU=Dev, O=Company, L=City, ST=State, C=CN"
+          fi
+
+          # 生成 keystore.properties 供 build.gradle.kts 读取, 这里的3个变量需要在Gitea仓库 “设置--工作流--变量” 中配置
+          cat > "$ANDROID_ROOT/keystore.properties" <<EOF
+          storePassword=${{ vars.KS_STORE_PASSWORD }}
+          keyPassword=${{ vars.KS_KEY_PASSWORD }}
+          keyAlias=${{ vars.KS_KEY_ALIAS }}
+          storeFile=$KS_DIR/upload-keystore.p12
+          EOF
+
+      - name: 打包 APK (Tauri v2)
+        run: pnpm tauri android build -t aarch64 --apk
+        env:
+          ANDROID_HOME: /opt/android-sdk
+          NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: wzzg_docs_apk
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+
