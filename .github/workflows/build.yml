@@ -36,14 +36,29 @@ jobs:
 
       - name: 安装 Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          # 指定需要安装的组件
-          packages: |
-            platforms;android-33
-            build-tools;33.0.0
+  
+
+      - name: 安装 Android 平台和构建工具
+        run: |
+          # 接受所有许可证
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+          # 安装 Android 33 平台
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33"
+          # 安装构建工具 33.0.0
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.0"
+
+      # - name: 安装 NDK
+      #   run: sdkmanager "ndk;27.2.12479018"
 
       - name: 安装 NDK
-        run: sdkmanager "ndk;27.2.12479018"
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;27.2.12479018"
+          echo "NDK installed at: $ANDROID_HOME/ndk/27.2.12479018"
+
+      - name: 设置 Android 环境变量
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
