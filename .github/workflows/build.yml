@@ -71,8 +71,8 @@ jobs:
           pnpm install
           pnpm add -D @tauri-apps/cli
 
-      # - name: 构建静态站点
-      #   run: pnpm run docs:build
+      - name: 构建静态站点
+        run: pnpm run docs:build
 
       # 清华镜像：sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/
       # 中科大镜像：sparse+https://mirrors.ustc.edu.cn/crates.io-index/
