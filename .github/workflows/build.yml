@@ -82,8 +82,8 @@ jobs:
             --ci \
             --app-name "运维文档" \
             --window-title "运维文档" \
-            --dist-dir "../src/.vuepress/dist/" \
-            --dev-path "http://localhost:8080" \
+            --frontend-dist "../src/.vuepress/dist/" \
+            --dev-url "http://localhost:8080" \
             --before-dev-command "pnpm run docs:dev" \
             --before-build-command "pnpm run docs:build" \
             --identifier "top.liks.docs"
