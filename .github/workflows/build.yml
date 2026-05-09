@@ -77,15 +77,16 @@ jobs:
           rm -rf src-tauri/target
 
       - name: tauri初始化基础
-        run: pnpm tauri init \
-          --ci \
-          --app-name "运维文档" \
-          --window-title "运维文档" \
-          --dist-dir "../src/.vuepress/dist/" \
-          --dev-path "http://localhost:8080" \
-          --before-dev-command "pnpm run docs:dev" \
-          --before-build-command "pnpm run docs:build" \
-          --identifier "top.liks.docs"
+        run: |
+          pnpm tauri init \
+            --ci \
+            --app-name "运维文档" \
+            --window-title "运维文档" \
+            --dist-dir "../src/.vuepress/dist/" \
+            --dev-path "http://localhost:8080" \
+            --before-dev-command "pnpm run docs:dev" \
+            --before-build-command "pnpm run docs:build" \
+            --identifier "top.liks.docs"
         # env:
         #   RUSTUP_DIST_SERVER: "https://rsproxy.cn"
         #   RUSTUP_UPDATE_ROOT: "https://rsproxy.cn/rustup"
