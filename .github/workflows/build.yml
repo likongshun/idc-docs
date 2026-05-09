@@ -52,13 +52,14 @@ jobs:
 
       - name: 安装 NDK
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;27.2.12479018"
-          echo "NDK installed at: $ANDROID_HOME/ndk/27.2.12479018"
-
+          # 接受所有许可证
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;29.0.14206865"
+              
       - name: 设置 Android 环境变量
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
@@ -176,39 +177,6 @@ jobs:
               }
           }
           EOF
-          
-          # 3. 覆盖 build.gradle.kts
-          # cp -f android-patches/build.gradle.kts "$ANDROID_APP_DIR/build.gradle.kts"
-          cat > "$ANDROID_APP_DIR/build.gradle.kts" <<'EOF'
-          import java.util.Properties
-          
-          android {
-              signingConfigs {
-                  create("release") {
-                      val keystorePropertiesFile = rootProject.file("keystore.properties")
-                      val keystoreProperties = Properties()
-                      if (keystorePropertiesFile.exists()) {
-                          keystoreProperties.load(keystorePropertiesFile.inputStream())
-                          storeFile = file(keystoreProperties.getProperty("storeFile"))
-                          storePassword = keystoreProperties.getProperty("storePassword")
-                          keyAlias = keystoreProperties.getProperty("keyAlias")
-                          keyPassword = keystoreProperties.getProperty("keyPassword")
-                      }
-                  }
-              }
-              
-              buildTypes {
-                  release {
-                      signingConfig = signingConfigs.findByName("release")
-                      isMinifyEnabled = false
-                      proguardFiles(
-                          getDefaultProguardFile("proguard-android-optimize.txt"),
-                          "proguard-rules.pro"
-                      )
-                  }
-              }
-          }
-          EOF
 
       # 生成 PKCS12 格式的 keystore 文件，供 Android Gradle 插件使用
       - name: 签名密钥文件生成及配置
@@ -239,8 +207,19 @@ jobs:
           storeFile=$KS_DIR/upload-keystore.p12
           EOF
 
+          # # 配置签名（使用 Tauri 的方式）
+          # cat >> src-tauri/tauri.conf.json <<EOF
+          # ,
+          # "android": {
+          #   "signing": {
+          #     "keystorePath": "$KS_DIR/upload-keystore.p12",
+          #     "keystorePassword": "${{ secrets.KEYSTORE_PASSWORD }}"
+          #   }
+          # }
+          # EOF
+
       - name: 打包 APK (Tauri v2)
-        run: pnpm tauri android build -t aarch64 --apk
+        run: pnpm tauri android build -t aarch64 --apk true -d
         # env:
         #   # ANDROID_HOME: /opt/android-sdk
         #   # NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
