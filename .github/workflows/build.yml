@@ -46,7 +46,7 @@ jobs:
           targets: aarch64-linux-android
  
       - name: 安装项目依赖
-        run: pnpm install --legacy-peer-deps
+        run: pnpm install
 
       # - name: 构建静态站点
       #   run: pnpm run docs:build
