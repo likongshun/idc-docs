@@ -240,17 +240,14 @@ jobs:
           EOF
 
       - name: 打包 APK (Tauri v2)
-        run: |
-          echo "ANDROID_HOME: $ANDROID_HOME"
-          echo "NDK_HOME: $NDK_HOME"
-          pnpm tauri android build -t aarch64 --apk
-        env:
-          # ANDROID_HOME: /opt/android-sdk
-          # NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          # 或者使用绝对路径（setup-android 通常安装在这里）
-          # ANDROID_HOME: /usr/local/lib/android/sdk
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+        run: pnpm tauri android build -t aarch64 --apk
+        # env:
+        #   # ANDROID_HOME: /opt/android-sdk
+        #   # NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
+        #   ANDROID_HOME: ${{ env.ANDROID_HOME }}
+        #   # 或者使用绝对路径（setup-android 通常安装在这里）
+        #   # ANDROID_HOME: /usr/local/lib/android/sdk
+        #   NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
