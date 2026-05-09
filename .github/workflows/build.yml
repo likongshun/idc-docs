@@ -46,28 +46,30 @@ jobs:
           targets: aarch64-linux-android
  
       - name: 安装项目依赖
-        run: pnpm install
+        run: |
+          pnpm install
+          pnpm add -D @tauri-apps/cli
 
       # - name: 构建静态站点
       #   run: pnpm run docs:build
 
       # 清华镜像：sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/
       # 中科大镜像：sparse+https://mirrors.ustc.edu.cn/crates.io-index/
-      - name: 配置 Cargo 镜像
-        run: |
-          mkdir -p ~/.cargo
-          cat > ~/.cargo/config.toml <<'EOF'
-          [source.crates-io]
-          replace-with = 'tuna-sparse'
+      # - name: 配置 Cargo 镜像
+      #   run: |
+      #     mkdir -p ~/.cargo
+      #     cat > ~/.cargo/config.toml <<'EOF'
+      #     [source.crates-io]
+      #     replace-with = 'tuna-sparse'
 
-          [source.tuna-sparse]
-          registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
+      #     [source.tuna-sparse]
+      #     registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
 
-          [net]
-          http.timeout = 600
-          retry = 10
-          git-fetch-with-cli = true
-          EOF
+      #     [net]
+      #     http.timeout = 600
+      #     retry = 10
+      #     git-fetch-with-cli = true
+      #     EOF
 
       - name: 清空并重建cargo缓存
         run: |
@@ -84,10 +86,10 @@ jobs:
           --before-dev-command "pnpm run docs:dev" \
           --before-build-command "pnpm run docs:build" \
           --identifier "top.liks.docs"
-        env:
-          RUSTUP_DIST_SERVER: "https://rsproxy.cn"
-          RUSTUP_UPDATE_ROOT: "https://rsproxy.cn/rustup"
-          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        # env:
+        #   RUSTUP_DIST_SERVER: "https://rsproxy.cn"
+        #   RUSTUP_UPDATE_ROOT: "https://rsproxy.cn/rustup"
+        #   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
       - name: tauri初始化安卓项目结构
         run: pnpm tauri android init
