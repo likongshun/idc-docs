@@ -100,7 +100,8 @@ jobs:
           # 修改tauri项目配置文件
           if grep -q '"identifier"' src-tauri/tauri.conf.json; then
               # 如果存在 identifier,修改它
-              sed -i 's/"identifier": ".*"/"identifier": "top.liks.docs"/' src-tauri/tauri.conf.json
+              # sed -i 's/"identifier": ".*"/"identifier": "top.liks.docs"/' src-tauri/tauri.conf.json
+              sed -i 's/"identifier": "com.tauri.app"/"identifier": "top.liks.docs"/' src-tauri/tauri.conf.json
           else
               # 如果不存在，在 bundle 部分添加
               sed -i '/"bundle": {/a\      "identifier": "top.liks.docs",' src-tauri/tauri.conf.json
