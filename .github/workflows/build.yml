@@ -219,7 +219,7 @@ jobs:
           # EOF
 
       - name: 打包 APK (Tauri v2)
-        run: pnpm tauri android build -t aarch64 --apk true -d
+        run: pnpm tauri android build -t aarch64 --apk --debug
         # env:
         #   # ANDROID_HOME: /opt/android-sdk
         #   # NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
