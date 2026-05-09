@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 打包,提前gitea中提前设置以下变量
+        description: 打包时gitea中提前设置以下变量
           KS_STORE_PASSWORD - store密码
           KS_KEY_PASSWORD - key密码
           KS_KEY_ALIAS - 密钥别名建议设为 upload
@@ -36,9 +36,15 @@ jobs:
 
       - name: 安装 Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 指定需要安装的组件
+          packages: |
+            platforms;android-33
+            ndk;27.2.12479018
+            build-tools;33.0.0
 
-      - name: 安装 NDK
-        run: sdkmanager "ndk;27.2.12479018"
+      # - name: 安装 NDK
+      #   run: sdkmanager "ndk;27.2.12479018"
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
@@ -220,10 +226,17 @@ jobs:
           EOF
 
       - name: 打包 APK (Tauri v2)
-        run: pnpm tauri android build -t aarch64 --apk
+        run: |
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          echo "NDK_HOME: $NDK_HOME"
+          pnpm tauri android build -t aarch64 --apk
         env:
-          ANDROID_HOME: /opt/android-sdk
-          NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
+          # ANDROID_HOME: /opt/android-sdk
+          # NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          # 或者使用绝对路径（setup-android 通常安装在这里）
+          # ANDROID_HOME: /usr/local/lib/android/sdk
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
