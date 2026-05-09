@@ -196,7 +196,8 @@ jobs:
           set -e
           ANDROID_ROOT="src-tauri/gen/android"
           KS_DIR="$RUNNER_TEMP/keystore"
-
+          mkdir -p "$KS_DIR"
+          
           if [ ! -f "$KS_DIR/upload-keystore.p12" ]; then
             keytool -genkey -v \
               -keystore $KS_DIR/upload-keystore.p12 \
