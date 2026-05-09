@@ -86,7 +86,6 @@ jobs:
             --dev-url "http://localhost:8080" \
             --before-dev-command "pnpm run docs:dev" \
             --before-build-command "pnpm run docs:build" \
-            --identifier "top.liks.docs"
         # env:
         #   RUSTUP_DIST_SERVER: "https://rsproxy.cn"
         #   RUSTUP_UPDATE_ROOT: "https://rsproxy.cn/rustup"
