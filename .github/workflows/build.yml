@@ -40,11 +40,10 @@ jobs:
           # 指定需要安装的组件
           packages: |
             platforms;android-33
-            ndk;27.2.12479018
             build-tools;33.0.0
 
-      # - name: 安装 NDK
-      #   run: sdkmanager "ndk;27.2.12479018"
+      - name: 安装 NDK
+        run: sdkmanager "ndk;27.2.12479018"
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
