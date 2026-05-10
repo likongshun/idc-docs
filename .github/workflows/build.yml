@@ -58,7 +58,11 @@ jobs:
           ndk: 26.1.10909125     # Tauri v2 推荐 NDK 版本
           cmake: 3.22.1
 
-
+      - name: 设置 Android 环境变量
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_HOME/ndk/26.1.10909125" >> $GITHUB_ENV
+          
       # - name: 安装 Android 平台和构建工具
       #   run: |
       #     # 接受所有许可证
@@ -259,8 +263,8 @@ jobs:
           }
           EOF
 
-      - name: 打包 APK (Tauri v2)
-        run: pnpm tauri android build -t aarch64 --apk --debug
+      - name: 打包 APK (使用Tauri v2)
+        run: pnpm tauri android build -t aarch64 --apk --release
         # env:
         #   # ANDROID_HOME: /opt/android-sdk
         #   # NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
