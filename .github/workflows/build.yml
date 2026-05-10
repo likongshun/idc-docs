@@ -17,10 +17,17 @@ permissions:
   actions: read
   pages: write
 
-# 仓库变量说明（需在 Gitea 仓库设置中配置）：
+# 仓库 Secrets 说明（需在 GitHub 仓库 Settings → Secrets and variables → Actions 中配置）：
 # KS_STORE_PASSWORD - store密码
 # KS_KEY_PASSWORD - key密码  
 # KS_KEY_ALIAS - 密钥别名（建议设为 upload）
+
+env:
+  CARGO_HOME: ${{ runner.temp }}/cargo_home
+  RUSTUP_HOME: ${{ runner.temp }}/rustup_home
+  PNPM_HOME: ${{ runner.temp }}/pnpm
+  ANDROID_HOME: ${{ runner.temp }}/android-sdk
+  NDK_HOME: ${{ runner.temp }}/android-sdk/ndk/27.2.12479018
 
 jobs:
   build:
@@ -34,30 +41,105 @@ jobs:
         with:
           fetch-depth: 1
 
-      # 安装 Node.js 和 pnpm
+      # ========== 缓存配置区域 ==========
+      
+      # 1. Node.js 模块缓存
+      - name: 缓存 pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      # 2. Rust/Cargo 缓存
+      - name: 缓存 Cargo 注册表
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_HOME }}/registry
+            ${{ env.CARGO_HOME }}/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: 缓存 Cargo 构建产物
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
+
+      # 3. Android SDK 缓存
+      - name: 缓存 Android SDK
+        id: cache-android-sdk
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ANDROID_HOME }}
+          key: ${{ runner.os }}-android-sdk-34-ndk-27
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
+
+      # 4. Rust 工具链缓存
+      - name: 缓存 Rustup
+        id: cache-rustup
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.RUSTUP_HOME }}
+          key: ${{ runner.os }}-rustup-stable-1.85
+          restore-keys: |
+            ${{ runner.os }}-rustup-stable-
+
+      # 5. Gradle 缓存（Android 构建）
+      - name: 缓存 Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ========== 环境安装区域 ==========
+
       - name: 安装 Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           
       - name: 安装 pnpm
-        run: corepack enable && corepack prepare pnpm@10 --activate
+        run: |
+          corepack enable
+          corepack prepare pnpm@10 --activate
+          echo "$PNPM_HOME" >> $GITHUB_PATH
 
       # 安装 Rust
       - name: 安装 Rust
-        uses: actions/rustup@v1
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: aarch64-linux-android
+          override: true
+        env:
+          RUSTUP_HOME: ${{ env.RUSTUP_HOME }}
+          CARGO_HOME: ${{ env.CARGO_HOME }}
 
-      # 安装 Android SDK
-      - name: 安装 Android SDK
+      # 设置 Rust 环境变量
+      - name: 设置 Rust 环境变量
         run: |
-          # 设置 Android SDK 路径
-          ANDROID_HOME=$RUNNER_TEMP/android-sdk
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
-          
+          echo "$CARGO_HOME/bin" >> $GITHUB_PATH
+          echo "RUSTUP_HOME=$RUSTUP_HOME" >> $GITHUB_ENV
+          echo "CARGO_HOME=$CARGO_HOME" >> $GITHUB_ENV
+          cargo --version
+          rustc --version
+
+      # 安装 Android SDK（使用缓存）
+      - name: 安装 Android SDK
+        if: steps.cache-android-sdk.outputs.cache-hit != 'true'
+        run: |
+          echo "安装 Android SDK（首次运行）..."
           # 下载命令行工具
           mkdir -p $ANDROID_HOME/cmdline-tools
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdline-tools.zip
@@ -65,20 +147,25 @@ jobs:
           mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
           rm /tmp/cmdline-tools.zip
           
-          # 添加 SDK 工具到 PATH
+          # 安装 SDK 组件
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.2.12479018"
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+
+      # 设置 Android SDK PATH
+      - name: 设置 Android SDK PATH
+        run: |
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
           echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
-          
-          # 安装 SDK 组件
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.2.12479018"
 
       # 安装 cargo-ndk
       - name: 安装 cargo-ndk
-        run: cargo install cargo-ndk
+        run: |
+          cargo install cargo-ndk
 
-      # 配置 Cargo 镜像（清华源）
+      # 配置 Cargo 镜像（可选，使用清华源加速）
       - name: 配置 Cargo 镜像
         run: |
           mkdir -p ~/.cargo
@@ -95,9 +182,11 @@ jobs:
           git-fetch-with-cli = true
           EOF
 
+      # ========== 构建区域 ==========
+
       # 安装项目依赖
       - name: 安装项目依赖
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       # 构建静态站点
       - name: 构建静态站点
@@ -106,7 +195,12 @@ jobs:
       # Tauri Android 初始化
       - name: Tauri Android 初始化
         run: |
-          pnpm tauri android init
+          if [ ! -d "src-tauri/gen/android" ]; then
+            echo "初始化 Tauri Android 项目..."
+            pnpm tauri android init
+          else
+            echo "Tauri Android 项目已存在，跳过初始化"
+          fi
         env:
           RUSTUP_DIST_SERVER: "https://rsproxy.cn"
           RUSTUP_UPDATE_ROOT: "https://rsproxy.cn/rustup"
@@ -117,6 +211,10 @@ jobs:
         run: |
           set -e
           ANDROID_APP_DIR="src-tauri/gen/android/app"
+
+          # 确保目录存在
+          mkdir -p "$ANDROID_APP_DIR/src/main/res/values"
+          mkdir -p "$ANDROID_APP_DIR/src/main/java/top/liks/docs"
 
           # 1. 覆盖 themes.xml
           cat > "$ANDROID_APP_DIR/src/main/res/values/themes.xml" <<'EOF'
@@ -129,9 +227,7 @@ jobs:
           EOF
 
           # 2. 覆盖 MainActivity.kt
-          rm -rf "$ANDROID_APP_DIR/src/main/java/com"
-          rm -rf "$ANDROID_APP_DIR/src/main/java/top"
-          mkdir -p "$ANDROID_APP_DIR/src/main/java/top/liks/docs"
+          rm -rf "$ANDROID_APP_DIR/src/main/java/com" 2>/dev/null || true
           cat > "$ANDROID_APP_DIR/src/main/java/top/liks/docs/MainActivity.kt" <<'EOF'
           package top.liks.docs
 
@@ -158,6 +254,8 @@ jobs:
             }
           }
           EOF
+          
+          echo "自定义 Android 文件已注入"
 
       # 生成签名密钥文件及配置
       - name: 签名密钥文件生成及配置
@@ -169,25 +267,30 @@ jobs:
           
           # 生成 keystore（如果不存在）
           if [ ! -f "$KS_DIR/upload-keystore.p12" ]; then
+            echo "生成新的 keystore..."
             keytool -genkey -v \
               -keystore "$KS_DIR/upload-keystore.p12" \
               -storetype PKCS12 \
               -keyalg RSA \
               -keysize 2048 \
               -validity 10000 \
-              -alias "${{ vars.KS_KEY_ALIAS }}" \
-              -storepass "${{ vars.KS_STORE_PASSWORD }}" \
-              -keypass "${{ vars.KS_KEY_PASSWORD }}" \
+              -alias "${{ secrets.KS_KEY_ALIAS }}" \
+              -storepass "${{ secrets.KS_STORE_PASSWORD }}" \
+              -keypass "${{ secrets.KS_KEY_PASSWORD }}" \
               -dname "CN=CI Build, OU=Dev, O=Company, L=City, ST=State, C=CN"
+          else
+            echo "使用已存在的 keystore"
           fi
 
           # 生成 keystore.properties
           cat > "$ANDROID_ROOT/keystore.properties" <<EOF
-          storePassword=${{ vars.KS_STORE_PASSWORD }}
-          keyPassword=${{ vars.KS_KEY_PASSWORD }}
-          keyAlias=${{ vars.KS_KEY_ALIAS }}
+          storePassword=${{ secrets.KS_STORE_PASSWORD }}
+          keyPassword=${{ secrets.KS_KEY_PASSWORD }}
+          keyAlias=${{ secrets.KS_KEY_ALIAS }}
           storeFile=$KS_DIR/upload-keystore.p12
           EOF
+          
+          echo "签名配置完成"
 
       # 配置 Tauri
       - name: 配置 Tauri
@@ -230,17 +333,28 @@ jobs:
             }
           }
           EOF
+          
+          echo "Tauri 配置完成"
 
       # 打包 APK
       - name: 打包 APK
         run: pnpm tauri android build -t aarch64 --apk
         env:
-          ANDROID_HOME: ${{ runner.temp }}/android-sdk
-          NDK_HOME: ${{ runner.temp }}/android-sdk/ndk/27.2.12479018
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
+          GRADLE_USER_HOME: ~/.gradle
 
       # 上传构建产物
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
           name: wzzg_docs_apk
-          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+          retention-days: 30
+
+      # 可选：清理 Gradle 缓存以节省空间
+      - name: 清理 Gradle 缓存
+        if: always()
+        run: |
+          rm -rf ~/.gradle/caches/transforms-* 2>/dev/null || true
+          rm -rf ~/.gradle/caches/build-cache-* 2>/dev/null || true
