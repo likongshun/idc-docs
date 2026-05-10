@@ -146,32 +146,15 @@ jobs:
 
       - name: 注入自定义安卓文件
         run: |
-          # 修改tauri项目配置文件
-          if grep -q '"identifier"' src-tauri/tauri.conf.json; then
-              # 如果存在 identifier,修改它
-              # sed -i 's/"identifier": ".*"/"identifier": "top.liks.docs"/' src-tauri/tauri.conf.json
-              sed -i 's/"identifier": "com.tauri.app"/"identifier": "top.liks.docs"/' src-tauri/tauri.conf.json
-          else
-              # 如果不存在，在 bundle 部分添加
-              sed -i '/"bundle": {/a\      "identifier": "top.liks.docs",' src-tauri/tauri.conf.json
-          fi
-
-
           set -e
           ANDROID_APP_DIR="src-tauri/gen/android/app"
-          
+
           # 1.覆盖 themes.xml
-          # cp -f android-patches/themes.xml "$ANDROID_APP_DIR/src/main/res/values/themes.xml"
           cat > "$ANDROID_APP_DIR/src/main/res/values/themes.xml" <<'EOF'
           <resources xmlns:tools="http://schemas.android.com/tools">
-              <!-- Base application theme. -->
               <style name="Theme.app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-                  <!-- Customize your theme here. -->
-                  <!-- 状态栏透明 -->
                   <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
-                  <!-- 导航栏透明（可选） -->
                   <item name="android:navigationBarColor" tools:targetApi="l">@android:color/transparent</item>
-                  <!-- 全屏不自动隐藏系统栏（由代码控制） -->
                   <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
               </style>
           </resources>
@@ -179,8 +162,6 @@ jobs:
         
           # 2. 覆盖 MainActivity.kt (路径基于你之前提供的包名 top.liks.docs)
           mkdir -p "$ANDROID_APP_DIR/src/main/java/top/liks/docs"
-          # cp -f android-patches/MainActivity.kt "$ANDROID_APP_DIR/src/main/java/top/liks/docs/MainActivity.kt"
-
           cat > "$ANDROID_APP_DIR/src/main/java/top/liks/docs/MainActivity.kt" <<'EOF'
           package top.liks.docs
 
@@ -236,16 +217,45 @@ jobs:
           storeFile=$KS_DIR/upload-keystore.p12
           EOF
 
-          # # 配置签名（使用 Tauri 的方式）
-          # cat >> src-tauri/tauri.conf.json <<EOF
-          # ,
-          # "android": {
-          #   "signing": {
-          #     "keystorePath": "$KS_DIR/upload-keystore.p12",
-          #     "keystorePassword": "${{ secrets.KEYSTORE_PASSWORD }}"
-          #   }
-          # }
-          # EOF
+          # 配置Tauri，替换包名
+          cat > src-tauri/tauri.conf.json <<'EOF'
+          {
+            "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+            "productName": "运维文档",
+            "version": "0.1.0",
+            "identifier": "top.liks.docs",
+            "build": {
+              "frontendDist": "../src/.vuepress/dist/",
+              "devUrl": "http://localhost:8080",
+              "beforeDevCommand": "npm run docs:dev"
+            },
+            "app": {
+              "windows": [
+                {
+                  "title": "运维文档",
+                  "width": 800,
+                  "height": 600,
+                  "resizable": true,
+                  "fullscreen": true
+                }
+              ],
+              "security": {
+                "csp": null
+              }
+            },
+            "bundle": {
+              "active": true,
+              "targets": "app",
+              "icon": [
+                "icons/32x32.png",
+                "icons/128x128.png",
+                "icons/128x128@2x.png",
+                "icons/icon.icns",
+                "icons/icon.ico"
+              ]
+            }
+          }
+          EOF
 
       - name: 打包 APK (Tauri v2)
         run: pnpm tauri android build -t aarch64 --apk --debug
