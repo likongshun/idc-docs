@@ -1,6 +1,9 @@
-name: 安卓打包
+name: Tauri Android 构建
+run-name: ${{ github.actor }} 触发打包Android App
 on:
-  workflow_dispatch:
+  push:
+    branches: [ main, master ]  # 推送到主分支自动构建
+  workflow_dispatch: # 支持页面手动触发构建
     inputs:
       version:
         description: 打包时gitea中提前设置以下变量
@@ -11,18 +14,32 @@ on:
         type: boolean
         default: false
 
+# 权限配置（必须，否则无法上传产物）
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60  # Tauri 构建较慢，延长超时时间
     steps:
-      - name: 读取仓库
+      - name: 读取仓库，检出代码
         uses: actions/checkout@v4
-
+        with:
+          fetch-depth: 1  # 浅克隆，加速速度
+          
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
+          cache: 'npm'  # 缓存依赖，加速构建
+          
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+          
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -34,38 +51,51 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: 安装 Android SDK
+      - name: 安装 Android SDK & NDK
         uses: android-actions/setup-android@v3
-  
+        with:
+          api-level: 34          # Android 14
+          build-tools: 34.0.0
+          ndk: 26.1.10909125     # Tauri v2 推荐 NDK 版本
+          cmake: 3.22.1
 
-      - name: 安装 Android 平台和构建工具
-        run: |
-          # 接受所有许可证
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-          # 安装 Android 33 平台
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33"
-          # 安装构建工具 33.0.0
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.0"
+
+      # - name: 安装 Android 平台和构建工具
+      #   run: |
+      #     # 接受所有许可证
+      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+      #     # 安装 Android 33 平台
+      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33"
+      #     # 安装构建工具 33.0.0
+      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.0"
 
       # - name: 安装 NDK
       #   run: sdkmanager "ndk;27.2.12479018"
 
-      - name: 安装 NDK
-        run: |
-          # 接受所有许可证
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;29.0.14206865"
+      # - name: 安装 NDK
+      #   run: |
+      #     # 接受所有许可证
+      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;29.0.14206865"
               
-      - name: 设置 Android 环境变量
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
+      # - name: 设置 Android 环境变量
+      #   run: |
+      #     echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+      #     echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
 
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: 缓存 Node + Rust + Android 依赖
+        uses: actions/cache@v4
         with:
-          targets: aarch64-linux-android
- 
+          path: |
+            ~/.npm
+            ~/.cargo
+            ~/.rustup
+            ~/.android
+            node_modules
+            src-tauri/target
+          key: ${{ runner.os }}-tauri-android-${{ hashFiles('**/package.json', '**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-tauri-android-
+          
       - name: 安装项目依赖
         run: |
           pnpm install
@@ -92,10 +122,10 @@ jobs:
       #     git-fetch-with-cli = true
       #     EOF
 
-      - name: 清空并重建cargo缓存
-        run: |
-          rm -rf ~/.cargo/registry/index/*
-          rm -rf src-tauri/target
+      # - name: 清空并重建cargo缓存
+      #   run: |
+      #     rm -rf ~/.cargo/registry/index/*
+      #     rm -rf src-tauri/target
 
       - name: tauri初始化基础
         run: |
@@ -233,4 +263,4 @@ jobs:
         with:
           name: wzzg_docs_apk
           path: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
-
+          if-no-files-found: error
