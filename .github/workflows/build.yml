@@ -161,6 +161,8 @@ jobs:
           EOF
         
           # 2. 覆盖 MainActivity.kt (路径基于你之前提供的包名 top.liks.docs)
+          # 删除旧的默认包名目录（com/tauri/dev），避免编译冲突
+          rm -rf "$ANDROID_APP_DIR/src/main/java/com"
           mkdir -p "$ANDROID_APP_DIR/src/main/java/top/liks/docs"
           cat > "$ANDROID_APP_DIR/src/main/java/top/liks/docs/MainActivity.kt" <<'EOF'
           package top.liks.docs
