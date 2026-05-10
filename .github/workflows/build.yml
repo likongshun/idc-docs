@@ -2,19 +2,9 @@ name: Tauri Android 构建
 run-name: ${{ github.actor }} 触发打包Android App
 on:
   push:
-    branches: [ main, master ]  # 推送到主分支自动构建
-  workflow_dispatch: # 支持页面手动触发构建
-    inputs:
-      version:
-        description: 打包时gitea中提前设置以下变量
-          KS_STORE_PASSWORD - store密码
-          KS_KEY_PASSWORD - key密码
-          KS_KEY_ALIAS - 密钥别名建议设为 upload
-        required: true
-        type: boolean
-        default: false
+    branches: [ main, master ]
+  workflow_dispatch:
 
-# 权限配置（必须，否则无法上传产物）
 permissions:
   contents: write
   actions: read
@@ -22,29 +12,29 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # Tauri 构建较慢，延长超时时间
+    timeout-minutes: 60
     steps:
-      - name: 读取仓库，检出代码
+      - name: 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1  # 浅克隆，加速速度
-          
-      - name: 安装 Node.js
+          fetch-depth: 1
+
+      - name: 安装 Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          
+
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
-          
+
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
-      - name: 安装 Java
+      - name: 安装 Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -53,48 +43,23 @@ jobs:
       - name: 安装 Android SDK & NDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 34          # Android 14
+          api-level: 34
           build-tools: 34.0.0
-          ndk: 26.1.10909125     # Tauri v2 推荐 NDK 版本
+          ndk: 26.1.109125
           cmake: 3.22.1
 
-
-      # - name: 安装 Android 平台和构建工具
-      #   run: |
-      #     # 接受所有许可证
-      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-      #     # 安装 Android 33 平台
-      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-33"
-      #     # 安装构建工具 33.0.0
-      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.0"
-
-      # - name: 安装 NDK
-      #   run: sdkmanager "ndk;27.2.12479018"
-
-      # - name: 安装 NDK
-      #   run: |
-      #     # 接受所有许可证
-      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
-      #     yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "ndk;29.0.14206865"
-              
-      # - name: 设置 Android 环境变量
-      #   run: |
-      #     echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-      #     echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
-
-      - name: 缓存 Node + Rust + Android 依赖
+      - name: 缓存依赖
         uses: actions/cache@v4
         with:
           path: |
-            ~/.npm
+            ~/.pnpm
             ~/.cargo
             ~/.rustup
             ~/.android
             node_modules
             src-tauri/target
           key: ${{ runner.os }}-tauri-android-${{ hashFiles('**/package.json', '**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-tauri-android-
-          
+
       - name: 安装项目依赖
         run: |
           pnpm install
@@ -103,30 +68,7 @@ jobs:
       - name: 构建静态站点
         run: pnpm run docs:build
 
-      # 清华镜像：sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/
-      # 中科大镜像：sparse+https://mirrors.ustc.edu.cn/crates.io-index/
-      # - name: 配置 Cargo 镜像
-      #   run: |
-      #     mkdir -p ~/.cargo
-      #     cat > ~/.cargo/config.toml <<'EOF'
-      #     [source.crates-io]
-      #     replace-with = 'tuna-sparse'
-
-      #     [source.tuna-sparse]
-      #     registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
-
-      #     [net]
-      #     http.timeout = 600
-      #     retry = 10
-      #     git-fetch-with-cli = true
-      #     EOF
-
-      # - name: 清空并重建cargo缓存
-      #   run: |
-      #     rm -rf ~/.cargo/registry/index/*
-      #     rm -rf src-tauri/target
-
-      - name: tauri初始化基础
+      - name: Tauri 初始化
         run: |
           pnpm tauri init \
             --ci \
@@ -135,43 +77,82 @@ jobs:
             --frontend-dist "../src/.vuepress/dist/" \
             --dev-url "http://localhost:8080" \
             --before-dev-command "pnpm run docs:dev" \
-            --before-build-command "pnpm run docs:build" \
-        # env:
-        #   RUSTUP_DIST_SERVER: "https://rsproxy.cn"
-        #   RUSTUP_UPDATE_ROOT: "https://rsproxy.cn/rustup"
-        #   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+            --before-build-command "pnpm run docs:build"
 
-      - name: tauri初始化安卓项目结构
+          # 正确写入 tauri.conf.json（无缩进错误）
+          cat > src-tauri/tauri.conf.json <<'EOF'
+          {
+            "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+            "productName": "运维文档",
+            "version": "0.1.0",
+            "identifier": "top.liks.docs",
+            "build": {
+              "frontendDist": "../src/.vuepress/dist/",
+              "devUrl": "http://localhost:8080",
+              "beforeDevCommand": "pnpm run docs:dev",
+              "beforeBuildCommand": "pnpm run docs:build"
+            },
+            "app": {
+              "windows": [
+                {
+                  "title": "运维文档",
+                  "width": 800,
+                  "height": 600,
+                  "resizable": true,
+                  "fullscreen": true
+                }
+              ],
+              "android": {
+                "minSdkVersion": 21
+              },
+              "security": {
+                "csp": null
+              }
+            },
+            "bundle": {
+              "active": true,
+              "targets": ["app"],
+              "icon": [
+                "icons/32x32.png",
+                "icons/128x128.png",
+                "icons/128x128@2x.png",
+                "icons/icon.icns",
+                "icons/icon.ico"
+              ]
+            }
+          }
+          EOF
+
+      - name: Tauri Android 初始化
         run: pnpm tauri android init
 
-      - name: 注入自定义安卓文件
+      - name: 注入自定义安卓文件（修复所有编译错误）
         run: |
           set -e
           ANDROID_APP_DIR="src-tauri/gen/android/app"
 
-          # 1.覆盖 themes.xml
+          # 1. 状态栏透明
           cat > "$ANDROID_APP_DIR/src/main/res/values/themes.xml" <<'EOF'
           <resources xmlns:tools="http://schemas.android.com/tools">
               <style name="Theme.app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-                  <item name="android:statusBarColor" tools:targetApi="l">@android:color/transparent</item>
-                  <item name="android:navigationBarColor" tools:targetApi="l">@android:color/transparent</item>
-                  <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="p">shortEdges</item>
+                  <item name="android:statusBarColor">@android:color/transparent</item>
+                  <item name="android:navigationBarColor">@android:color/transparent</item>
               </style>
           </resources>
           EOF
-        
-          # 2. 覆盖 MainActivity.kt (路径基于你之前提供的包名 top.liks.docs)
-          # 删除旧的默认包名目录（com/tauri/dev），避免编译冲突
+
+          # 2. 删除旧包名，写入正确 MainActivity
           rm -rf "$ANDROID_APP_DIR/src/main/java/com"
+          rm -rf "$ANDROID_APP_DIR/src/main/java/top"
           mkdir -p "$ANDROID_APP_DIR/src/main/java/top/liks/docs"
+
           cat > "$ANDROID_APP_DIR/src/main/java/top/liks/docs/MainActivity.kt" <<'EOF'
           package top.liks.docs
-
           import android.os.Bundle
           import android.view.View
           import android.view.WindowManager
           import com.tauri.android.TauriActivity
-
+          
           class MainActivity : TauriActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -191,28 +172,24 @@ jobs:
           }
           EOF
 
-      # 生成 PKCS12 格式的 keystore 文件，供 Android Gradle 插件使用
-      - name: 签名密钥文件生成及配置
+      - name: 签名配置
         run: |
           set -e
           ANDROID_ROOT="src-tauri/gen/android"
           KS_DIR="$RUNNER_TEMP/keystore"
           mkdir -p "$KS_DIR"
-          
-          if [ ! -f "$KS_DIR/upload-keystore.p12" ]; then
-            keytool -genkey -v \
-              -keystore $KS_DIR/upload-keystore.p12 \
-              -storetype PKCS12 \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -alias upload \
-              -storepass ${{ secrets.KEYSTORE_PASSWORD }} \
-              -keypass ${{ secrets.KEY_PASSWORD }} \
-              -dname "CN=CI Build, OU=Dev, O=Company, L=City, ST=State, C=CN"
-          fi
 
-          # 生成 keystore.properties 供 build.gradle.kts 读取, 这里的3个变量需要在Gitea仓库 “设置--工作流--变量” 中配置
+          # 生成签名
+          keytool -genkey -v \
+            -keystore $KS_DIR/upload-keystore.p12 \
+            -storetype PKCS12 \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -alias upload \
+            -storepass ${{ vars.KS_STORE_PASSWORD }} \
+            -keypass ${{ vars.KS_KEY_PASSWORD }} \
+            -dname "CN=CI Build, OU=Dev, O=Company, L=City, ST=State, C=CN"
+
+          # 无缩进、正确格式
           cat > "$ANDROID_ROOT/keystore.properties" <<EOF
           storePassword=${{ vars.KS_STORE_PASSWORD }}
           keyPassword=${{ vars.KS_KEY_PASSWORD }}
@@ -220,59 +197,12 @@ jobs:
           storeFile=$KS_DIR/upload-keystore.p12
           EOF
 
-          # 配置Tauri，替换包名
-          cat > src-tauri/tauri.conf.json <<'EOF'
-          {
-            "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-            "productName": "运维文档",
-            "version": "0.1.0",
-            "identifier": "top.liks.docs",
-            "build": {
-              "frontendDist": "../src/.vuepress/dist/",
-              "devUrl": "http://localhost:8080",
-              "beforeDevCommand": "npm run docs:dev"
-            },
-            "app": {
-              "windows": [
-                {
-                  "title": "运维文档",
-                  "width": 800,
-                  "height": 600,
-                  "resizable": true,
-                  "fullscreen": true
-                }
-              ],
-              "security": {
-                "csp": null
-              }
-            },
-            "bundle": {
-              "active": true,
-              "targets": "app",
-              "icon": [
-                "icons/32x32.png",
-                "icons/128x128.png",
-                "icons/128x128@2x.png",
-                "icons/icon.icns",
-                "icons/icon.ico"
-              ]
-            }
-          }
-          EOF
+      - name: 打包 APK
+        run: pnpm tauri android build -t aarch64 --apk --release
 
-      - name: 打包 APK (Tauri v2)
-        run: pnpm tauri android build -t aarch64 --apk --debug
-        # env:
-        #   # ANDROID_HOME: /opt/android-sdk
-        #   # NDK_HOME: /opt/android-sdk/ndk/27.2.12479018
-        #   ANDROID_HOME: ${{ env.ANDROID_HOME }}
-        #   # 或者使用绝对路径（setup-android 通常安装在这里）
-        #   # ANDROID_HOME: /usr/local/lib/android/sdk
-        #   NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
-
-      - name: 上传构建产物
+      - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
           name: wzzg_docs_apk
-          path: src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          path: src-tauri/gen/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
           if-no-files-found: error
